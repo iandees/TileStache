@@ -1,5 +1,5 @@
 import urllib2
-from TileStache.Core import KnownUnknown
+from TileStache.Core import KnownUnknown, TheTileLeftANote
 
 def coordinate_bbox(coord, projection):
     """
@@ -47,7 +47,7 @@ class Provider:
             This only accepts "xml".
         """
         if extension.lower() not in ('osm', 'xml'):
-            raise KnownUnknown('TileDataOSM only makes .xml or .osm tiles, not "%s"' % extension)
+            raise KnownUnknown('Proxied TileDataOSM only makes .xml or .osm tiles, not "%s"' % extension)
     
         return 'text/xml', 'XML'
 
@@ -55,11 +55,10 @@ class Provider:
         """ Render a single tile, return a SaveableResponse instance.
         """
         if coord.zoom is not self.allowed_zoom:
-            return (404)
+            raise TheTileLeftANote(status_code=404, content='This layer only supports zoom %s.' % self.allowed_zoom, emit_content_type=False)
 
         n, s, e, w = coordinate_bbox(coord, self.layer.projection)
         url = "%s?bbox=%0.7f,%0.7f,%0.7f,%0.7f" % (self.api_root, w, s, e, n)
-        raise KnownUnknown('url was %s' % url)
         req = urllib2.Request(url)
         req.add_header('User-Agent', 'OSMTiler/1.0 +http://github.com/osmlab/tiled-osm/')
         body = urllib2.urlopen(req).read()
