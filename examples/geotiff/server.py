@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-"""tilestache-server.py will serve your cache.
+"""server.py will serve your cache.
 
-This script is intended to be run directly from the command line.
+This script is intended to be run directly from the command line from its current location.
 
 It is intended for direct use only during development or for debugging TileStache.
 
@@ -11,20 +11,19 @@ http://tilestache.org/doc/#serving-tiles
 
 To use this built-in server, install werkzeug and then run tilestache-server.py:
 
-    tilestache-server.py
+    server.py
 
-By default the script looks for a config file named tilestache.cfg in the current directory and then serves tiles on http://127.0.0.1:8080/. 
+By default the script serves tiles on http://127.0.0.1:8080/.
 
 You can then open your browser and view a url like:
 
-    http://localhost:8080/osm/0/0/0.png
+    http://localhost:8080/geotiff/0/0/0.png
 
-The above layer of 'osm' (defined in the tilestache.cfg) will display an OpenStreetMap
-tile proxied from http://tile.osm.org/0/0/0.png
-   
-Check tilestache-server.py --help to change these defaults.
+Check server.py --help to change these defaults.
 """
-from __future__ import print_function
+
+import json
+
 
 if __name__ == '__main__':
     from datetime import datetime
@@ -32,6 +31,21 @@ if __name__ == '__main__':
     import os, sys
 
     parser = OptionParser()
+
+    config = {
+        "cache": {
+            "name": "Test",
+            "path": "/tmp/stache",
+            "umask": "0000"
+        },
+        "layers": {
+            "geotiff": {
+                "provider": {"name": "mapnik", "mapfile": "mapnik.xml"},
+                "projection": "spherical mercator"
+            }
+        }
+    }
+
     parser.add_option("-c", "--config", dest="file", default="tilestache.cfg",
         help="the path to the tilestache config")
     parser.add_option("-i", "--ip", dest="ip", default="127.0.0.1",
@@ -49,10 +63,5 @@ if __name__ == '__main__':
     from werkzeug.serving import run_simple
     import TileStache
 
-    if not os.path.exists(options.file):
-        print("Config file not found. Use -c to pick a tilestache config file.", file=sys.stderr)
-        sys.exit(1)
-
-    app = TileStache.WSGITileServer(config=options.file, autoreload=True)
+    app = TileStache.WSGITileServer(config=config, autoreload=True)
     run_simple(options.ip, options.port, app)
-

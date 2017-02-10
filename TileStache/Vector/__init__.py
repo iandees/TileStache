@@ -154,7 +154,11 @@ you can save yourself a world of trouble by using this definition:
 """
 
 from re import compile
-from urlparse import urlparse, urljoin
+try:
+    from urllib.parse import urljoin, urlparse
+except ImportError:
+    # Python 2
+    from urlparse import urljoin, urlparse
 
 try:
     from json import JSONEncoder, loads as json_loads
@@ -163,9 +167,9 @@ except ImportError:
 
 from osgeo import ogr, osr
 
-from TileStache.Core import KnownUnknown
-from TileStache.Geography import getProjectionByName
-from Arc import reserialize_to_arc, pyamf_classes
+from ..Core import KnownUnknown
+from ..Geography import getProjectionByName
+from .Arc import reserialize_to_arc, pyamf_classes
 
 class VectorResponse:
     """ Wrapper class for Vector response that makes it behave like a PIL.Image object.
@@ -220,9 +224,10 @@ class VectorResponse:
     
             for atom in encoded:
                 if float_pat.match(atom):
-                    out.write(('%%.%if' % self.precision) % float(atom))
+                    piece = ('%%.%if' % self.precision) % float(atom)
                 else:
-                    out.write(atom)
+                    piece = atom
+                out.write(piece.encode('utf8'))
         
         elif format in ('GeoBSON', 'ArcBSON'):
             import bson
@@ -303,7 +308,7 @@ def _tile_perimeter_geom(coord, projection, padded):
         Uses _tile_perimeter().
     """
     perimeter = _tile_perimeter(coord, projection, padded)
-    wkt = 'POLYGON((%s))' % ', '.join(['%.3f %.3f' % xy for xy in perimeter])
+    wkt = 'POLYGON((%s))' % ', '.join(['%.7f %.7f' % xy for xy in perimeter])
     geom = ogr.CreateGeometryFromWkt(wkt)
     
     ref = osr.SpatialReference()
@@ -312,7 +317,7 @@ def _tile_perimeter_geom(coord, projection, padded):
     
     return geom
 
-def _feature_properties(feature, layer_definition, whitelist=None):
+def _feature_properties(feature, layer_definition, whitelist=None, skip_empty_fields=False):
     """ Returns a dictionary of feature properties for a feature in a layer.
     
         Third argument is an optional list or dictionary of properties to
@@ -323,10 +328,16 @@ def _feature_properties(feature, layer_definition, whitelist=None):
         OFTInteger (0), OFTIntegerList (1), OFTReal (2), OFTRealList (3),
         OFTString (4), OFTStringList (5), OFTWideString (6), OFTWideStringList (7),
         OFTBinary (8), OFTDate (9), OFTTime (10), OFTDateTime (11).
+
+        Extra OGR types for GDAL 2.x:
+        OFTInteger64 (12), OFTInteger64List (13)
     """
     properties = {}
-    okay_types = ogr.OFTInteger, ogr.OFTReal, ogr.OFTString, ogr.OFTWideString, ogr.OFTDate, ogr.OFTTime, ogr.OFTDateTime
-    
+    okay_types = [ogr.OFTInteger, ogr.OFTReal, ogr.OFTString,
+                  ogr.OFTWideString, ogr.OFTDate, ogr.OFTTime, ogr.OFTDateTime]
+    if hasattr(ogr, 'OFTInteger64'):
+        okay_types.extend([ogr.OFTInteger64, ogr.OFTInteger64List])
+
     for index in range(layer_definition.GetFieldCount()):
         field_definition = layer_definition.GetFieldDefn(index)
         field_type = field_definition.GetType()
@@ -343,10 +354,11 @@ def _feature_properties(feature, layer_definition, whitelist=None):
                 raise KnownUnknown("Found an OGR field type I've never even seen: %d" % field_type)
             else:
                 raise KnownUnknown("Found an OGR field type I don't know what to do with: ogr.%s" % name)
-       
-        property = type(whitelist) is dict and whitelist[name] or name
-        properties[property] = feature.GetField(name)
-    
+
+        if not skip_empty_fields or feature.IsFieldSet(name):
+            property = type(whitelist) is dict and whitelist[name] or name
+            properties[property] = feature.GetField(name)
+
     return properties
 
 def _append_with_delim(s, delim, data, key):
@@ -419,7 +431,7 @@ def _open_layer(driver_name, parameters, dirpath):
         
     elif driver_name in ('ESRI Shapefile', 'GeoJSON', 'SQLite'):
         if 'file' not in parameters:
-            raise KnownUnknown('Need at least a "file" parameter for a shapefile')
+            raise KnownUnknown('Need a "file" parameter')
     
         file_href = urljoin(dirpath, parameters['file'])
         scheme, h, file_path, q, p, f = urlparse(file_href)
@@ -450,7 +462,7 @@ def _open_layer(driver_name, parameters, dirpath):
         layer = datasource.GetLayer(0)
 
     if layer.GetSpatialRef() is None and driver_name != 'SQLite': 
-        raise KnownUnknown('Couldn\'t get a layer from data source %s' % source_name)
+        raise KnownUnknown('The layer has no spatial reference: %s' % source_name)
 
     #
     # Return the layer and the datasource.
@@ -460,7 +472,7 @@ def _open_layer(driver_name, parameters, dirpath):
     #
     return layer, datasource
 
-def _get_features(coord, properties, projection, layer, clipped, projected, spacing, id_property):
+def _get_features(coord, properties, projection, layer, clipped, projected, spacing, id_property, skip_empty_fields=False):
     """ Return a list of features in an OGR layer with properties in GeoJSON form.
     
         Optionally clip features to coordinate bounding box, and optionally
@@ -524,7 +536,7 @@ def _get_features(coord, properties, projection, layer, clipped, projected, spac
         geometry.TransformTo(output_sref)
 
         geom = json_loads(geometry.ExportToJson())
-        prop = _feature_properties(feature, definition, properties)
+        prop = _feature_properties(feature, definition, properties, skip_empty_fields)
 
         geojson_feature = {'type': 'Feature', 'properties': prop, 'geometry': geom}
         if id_property != None and id_property in prop:
@@ -539,7 +551,7 @@ class Provider:
         See module documentation for explanation of constructor arguments.
     """
     
-    def __init__(self, layer, driver, parameters, clipped, verbose, projected, spacing, properties, precision, id_property):
+    def __init__(self, layer, driver, parameters, clipped, verbose, projected, spacing, properties, precision, id_property, skip_empty_fields=False):
         self.layer      = layer
         self.driver     = driver
         self.clipped    = clipped
@@ -550,6 +562,7 @@ class Provider:
         self.properties = properties
         self.precision  = precision
         self.id_property = id_property
+        self.skip_empty_fields = skip_empty_fields
 
     @staticmethod
     def prepareKeywordArgs(config_dict):
@@ -564,6 +577,7 @@ class Provider:
         kwargs['projected'] = bool(config_dict.get('projected', False))
         kwargs['verbose'] = bool(config_dict.get('verbose', False))
         kwargs['precision'] = int(config_dict.get('precision', 6))
+        kwargs['skip_empty_fields'] = bool(config_dict.get('skip_empty_fields', False))
         
         if 'spacing' in config_dict:
             kwargs['spacing'] = float(config_dict.get('spacing', 0.0))
@@ -581,7 +595,7 @@ class Provider:
         """ Render a single tile, return a VectorResponse instance.
         """
         layer, ds = _open_layer(self.driver, self.parameters, self.layer.config.dirpath)
-        features = _get_features(coord, self.properties, self.layer.projection, layer, self.clipped, self.projected, self.spacing, self.id_property)
+        features = _get_features(coord, self.properties, self.layer.projection, layer, self.clipped, self.projected, self.spacing, self.id_property, self.skip_empty_fields)
         response = {'type': 'FeatureCollection', 'features': features}
         
         if self.projected:
@@ -602,10 +616,10 @@ class Provider:
             This only accepts "geojson" for the time being.
         """
         if extension.lower() == 'geojson':
-            return 'text/json', 'GeoJSON'
+            return 'application/json', 'GeoJSON'
     
         elif extension.lower() == 'arcjson':
-            return 'text/json', 'ArcJSON'
+            return 'application/json', 'ArcJSON'
             
         elif extension.lower() == 'geobson':
             return 'application/x-bson', 'GeoBSON'

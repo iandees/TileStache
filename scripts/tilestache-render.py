@@ -18,14 +18,14 @@ You are expected to use these files and then dispose of them.
 
 See `tilestache-render.py --help` for more information.
 """
-
+from __future__ import print_function
 
 import re
 import os
 from tempfile import mkstemp
 from optparse import OptionParser
 
-from TileStache import parseConfigfile, getTile
+from TileStache import parseConfig, getTile
 from TileStache.Core import KnownUnknown
 
 from ModestMaps.Core import Coordinate
@@ -48,45 +48,45 @@ pathinfo_pat = re.compile(r'^(?P<z>\d+)/(?P<x>\d+)/(?P<y>\d+)\.(?P<e>\w+)$')
 
 if __name__ == '__main__':
     options, paths = parser.parse_args()
-    
+
     try:
         if options.config is None:
             raise KnownUnknown('Missing required configuration (--config) parameter.')
-    
+
         if options.layer is None:
             raise KnownUnknown('Missing required layer (--layer) parameter.')
-    
-        config = parseConfigfile(options.config)
-        
+
+        config = parseConfig(options.config)
+
         if options.layer not in config.layers:
             raise KnownUnknown('"%s" is not a layer I know about. Here are some that I do know about: %s.' % (options.layer, ', '.join(sorted(config.layers.keys()))))
-        
+
         layer = config.layers[options.layer]
-        
+
         coords = []
-        
+
         for path in paths:
             path_ = pathinfo_pat.match(path)
-            
+
             if path_ is None:
                 raise KnownUnknown('"%s" is not a path I understand. I was expecting something more like "0/0/0.png".' % path)
-            
+
             row, column, zoom, extension = [path_.group(p) for p in 'yxze']
             coord = Coordinate(int(row), int(column), int(zoom))
 
             coords.append(coord)
 
-    except KnownUnknown, e:
+    except KnownUnknown as e:
         parser.error(str(e))
-    
+
     for coord in coords:
         # render
-        _, _, content = getTile(layer, coord, extension)
-        
+        mimetype, content = getTile(layer, coord, extension)
+
         # save
         handle, filename = mkstemp(prefix='tile-', suffix='.'+extension)
         os.write(handle, content)
         os.close(handle)
-        
+
         # inform
-        print filename
+        print(filename)

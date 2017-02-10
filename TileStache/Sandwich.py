@@ -125,23 +125,35 @@ from urllib import urlopen
 
 from . import Core
 
-import Image
-import Blit
+try:
+    import Image
+except ImportError:
+    try:
+        from Pillow import Image
+    except ImportError:
+        from PIL import Image
 
-blend_modes = {
-    'screen': Blit.blends.screen,
-    'add': Blit.blends.add,
-    'multiply': Blit.blends.multiply,
-    'subtract': Blit.blends.subtract,
-    'linear light': Blit.blends.linear_light,
-    'hard light': Blit.blends.hard_light
-    }
+try:
+    import Blit
 
-adjustment_names = {
-    'threshold': Blit.adjustments.threshold,
-    'curves': Blit.adjustments.curves,
-    'curves2': Blit.adjustments.curves2
-    }
+    blend_modes = {
+        'screen': Blit.blends.screen,
+        'add': Blit.blends.add,
+        'multiply': Blit.blends.multiply,
+        'subtract': Blit.blends.subtract,
+        'linear light': Blit.blends.linear_light,
+        'hard light': Blit.blends.hard_light
+        }
+
+    adjustment_names = {
+        'threshold': Blit.adjustments.threshold,
+        'curves': Blit.adjustments.curves,
+        'curves2': Blit.adjustments.curves2
+        }
+
+except ImportError:
+    # Well, this will not work.
+    pass
 
 class Provider:
     """ Sandwich Provider.
@@ -276,7 +288,7 @@ def layer_bitmap(layer, coord):
     """
     from . import getTile
 
-    _, _, body = getTile(layer, coord, 'png')
+    mime, body = getTile(layer, coord, 'png')
     image = Image.open(StringIO(body)).convert('RGBA')
 
     return Blit.Bitmap(image)

@@ -1,3 +1,99 @@
+2017-01-26: 1.51.6
+- Fix on tile generation
+
+2017-01-25: 1.51.5
+- Fix to be compliant with mapnik 3 grid renderer
+- Fix of preview protocol
+- Moving towards python 3 compliance
+
+2016-12-21: 1.51.4
+- Support for GDAL 2.x types OFTInteger64 and OFTInteger64 on Vector Tiles
+
+2016-10-30: 1.51.3
+- Fixes for debian packaging
+
+2016-10-27: 1.51.2
+- Adding support for .pbf format for Mapbox Vector Tiles
+- Configuration can be passed as a dictionary in addition to path to JSON file.
+
+2016-09-01: 1.51.1
+- Bugfix on Mapnik image object
+
+2016-09-01: 1.51
+- Replacing PIL by Pillow
+- Added example with raster
+
+2015-01-30: 1.50.1
+- Fixed missing ttf file
+
+2015-01-21: 1.50.0
+- Added 'scale factor' option to Mapnik image provider
+- Added S3 policy specification to config
+- Added dictionary config to VecTiles config
+- Added pixel effects to all layer configurations
+- Added remote configuration to MapnikGrid to match Mapnik
+- Fixed UtfGridComposite to work with latest TileStache
+- Fixed Pillow dependency
+- Fixed "cache lifespan" in Redis cache
+
+2014-06-07: 1.49.11
+- Fixed 'allow-origin header' getting overwritten (JesseCrocker)
+- Added 'source projection' parameter to UrlTemplate provider (JesseCrocker)
+- Fixed minor AttributeError when palette256 argument is None (PerryGeo)
+- Added Timeout feature to Proxy and UrlTemplate providers (Juliomalegria)
+- Adjusted curl examples (Peter Richardson)
+- More specific error message when SpatialRef is missing (probabble)
+
+2014-05-10: 1.49.10
+- Fixed Travis build.
+- Fixed import errors for case-insensitive filesystems.
+- Added TileStache Vagrant machine configuration.
+- Fixed some memcache testing problems.
+
+2014-05-10: 1.49.9
+- Moved everything to PyPI and fixed VERSION kerfuffle.
+
+2013-07-02: 1.49.8
+- Dropped Proxy provider srs=900913 check.
+- Updated most JSON mime-types from text/json to application/json.
+- Fixed requestHandler() query_string argument to match existing API docs.
+- Switched order of simplify and transform in VecTiles queries to handle GEOS bug.
+- Made Rummy CORS-compliant.
+
+2013-06-23: 1.49.7
+- Added VecTiles:MultiProvider to merge TopoJSON and GeoJSON output layers.
+
+2013-06-21: 1.49.6
+- Switched to ST_SimplifyPreserveTopology in VecTiles clipping to calm GEOS.
+
+2013-06-20: 1.49.5
+- Tweaked VecTiles Provider documentation.
+
+2013-06-20: 1.49.4
+- Added TopoJSON support to VecTiles Provider.
+
+2013-06-15: 1.49.3
+- Fixed runaway query bug in VecTiles Provider with looped bounds in query_columns().
+
+2013-06-14: 1.49.2
+- Fixed SQL bug in VecTiles Provider for limiting column queries.
+
+2013-06-14: 1.49.1
+- Updated magic column names in VecTiles Provider to __geometry__ and __id__ for feature ID.
+
+2013-06-05: 1.49.0
+- Added option to use S3 reduced redundancy storage for cheaper caching.
+- Made Postgres connections per-request instead of long term in VecTiles Provider.
+
+2013-05-28: 1.48.2
+- Fixed a serious documentation incompatibility with TileStache.requestHandler() introduced in 1.47.0.
+
+2013-05-27: 1.48.1
+- Fixed Werkzeug dependency in setup.py.
+
+2013-05-26: 1.48.0
+- Fixed a serious documentation incompatibility with TileStache.getTile() introduced in 1.47.0.
+
 2013-04-24: 1.47.4
 - Fixed from-mbtiles/output-directory use case in tilestache-seed, which I had broken.
 

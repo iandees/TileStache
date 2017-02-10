@@ -39,8 +39,13 @@ Redis cache parameters:
     
 
 """
+from __future__ import absolute_import
 from time import time as _time, sleep as _sleep
 
+# We enabled absolute_import because case insensitive filesystems
+# cause this file to be loaded twice (the name of this file
+# conflicts with the name of the module we want to import).
+# Forcing absolute imports fixes the issue.
 
 try:
     import redis
@@ -108,4 +113,10 @@ class Cache:
         """ Save a cached tile.
         """
         key = tile_key(layer, coord, format, self.key_prefix)
-        self.conn.set(key, body)
+
+        # note: setting ex=0 will raise an error
+        cache_lifespan = layer.cache_lifespan
+        if cache_lifespan == 0:
+            cache_lifespan = None
+
+        self.conn.set(key, body, ex=cache_lifespan)

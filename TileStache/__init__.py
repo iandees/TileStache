@@ -8,7 +8,10 @@ designers and cartographers.
 
 Documentation available at http://tilestache.org/doc/
 """
-__version__ = 'N.N.N'
+from __future__ import print_function
+import os.path
+
+__version__ = open(os.path.join(os.path.dirname(__file__), 'VERSION')).read().strip()
 
 import re
 
@@ -17,47 +20,85 @@ try:
     from urlparse import parse_qs
 except ImportError:
     from cgi import parse_qs
-from StringIO import StringIO
+try:
+    from io import StringIO
+except ImportError:
+    # Python 2
+    from StringIO import StringIO
 from os.path import dirname, join as pathjoin, realpath
 from datetime import datetime, timedelta
-from urlparse import urljoin, urlparse
+try:
+    from urllib.parse import urljoin, urlparse
+except ImportError:
+    # Python 2
+    from urlparse import urljoin, urlparse
 from wsgiref.headers import Headers
-from urllib import urlopen
+try:
+    from urllib.request import urlopen
+except ImportError:
+    # Python 2
+    from urllib import urlopen
 from os import getcwd
 from time import time
 
-import httplib
+try:
+    import http.client as httplib
+except ImportError:
+    # Python 2
+    import httplib
 import logging
 
 try:
     from json import load as json_load
+    from json import loads as json_loads
 except ImportError:
     from simplejson import load as json_load
+    from simplejson import loads as json_loads
 
 from ModestMaps.Core import Coordinate
 
 # dictionary of configuration objects for requestLayer().
 _previous_configs = {}
 
-import Core
-import Config
+from . import Core
+from . import Config
 
 # regular expression for PATH_INFO
 _pathinfo_pat = re.compile(r'^/?(?P<l>\w.+)/(?P<z>\d+)/(?P<x>-?\d+)/(?P<y>-?\d+)\.(?P<e>\w+)$')
 _preview_pat = re.compile(r'^/?(?P<l>\w.+)/(preview\.html)?$')
 
-getTile = Core.Layer.getTile
+def getTile(layer, coord, extension, ignore_cached=False):
+    ''' Get a type string and tile binary for a given request layer tile.
+
+        This function is documented as part of TileStache's public API:
+            http://tilestache.org/doc/#tilestache-gettile
+
+        Arguments:
+        - layer: instance of Core.Layer to render.
+        - coord: one ModestMaps.Core.Coordinate corresponding to a single tile.
+        - extension: filename extension to choose response type, e.g. "png" or "jpg".
+        - ignore_cached: always re-render the tile, whether it's in the cache or not.
+
+        This is the main entry point, after site configuration has been loaded
+        and individual tiles need to be rendered.
+    '''
+    status_code, headers, body = layer.getTileResponse(coord, extension, ignore_cached)
+    mime = headers.get('Content-Type')
+
+    return mime, body
 
 def getPreview(layer):
     """ Get a type string and dynamic map viewer HTML for a given layer.
     """
     return 200, Headers([('Content-Type', 'text/html')]), Core._preview(layer)
 
-def parseConfigfile(configpath):
+
+def parseConfig(configHandle):
     """ Parse a configuration file and return a Configuration object.
-    
-        Configuration file is formatted as JSON with two sections, "cache" and "layers":
-        
+
+        Configuration could be a Python dictionary or a file formatted as JSON. In both cases
+        it needs to be formatted with two sections, "cache" and "layers":
+
           {
             "cache": { ... },
             "layers": {
@@ -66,34 +107,45 @@ def parseConfigfile(configpath):
               ...
             }
           }
-        
+
         The full path to the file is significant, used to
         resolve any relative paths found in the configuration.
-        
+
         See the Caches module for more information on the "caches" section,
         and the Core and Providers modules for more information on the
         "layers" section.
     """
-    config_dict = json_load(urlopen(configpath))
-    
-    scheme, host, path, p, q, f = urlparse(configpath)
-    
-    if scheme == '':
-        scheme = 'file'
-        path = realpath(path)
-    
-    dirpath = '%s://%s%s' % (scheme, host, dirname(path).rstrip('/') + '/')
+    if isinstance(configHandle, dict):
+        config_dict = configHandle
+        dirpath = '.'
+    else:
+        scheme, host, path, p, q, f = urlparse(configHandle)
+        
+        if scheme == '':
+            scheme = 'file'
+            path = realpath(path)
+
+        if scheme == 'file':
+            with open(path) as file:
+                config_dict = json_load(file)
+        else:
+            config_dict = json_load(urlopen(configHandle))
+
+        dirpath = '%s://%s%s' % (scheme, host, dirname(path).rstrip('/') + '/')
 
     return Config.buildConfiguration(config_dict, dirpath)
 
+parseConfigfile = parseConfig  # Deprecated function
+
+
 def splitPathInfo(pathinfo):
     """ Converts a PATH_INFO string to layer name, coordinate, and extension parts.
-        
+
         Example: "/layer/0/0/0.png", leading "/" optional.
     """
     if pathinfo == '/':
         return None, None, None
-    
+
     if _pathinfo_pat.match(pathinfo or ''):
         path = _pathinfo_pat.match(pathinfo)
         layer, row, column, zoom, extension = [path.group(p) for p in 'lyxze']
@@ -111,20 +163,20 @@ def splitPathInfo(pathinfo):
 
 def mergePathInfo(layer, coord, extension):
     """ Converts layer name, coordinate and extension back to a PATH_INFO string.
-    
+
         See also splitPathInfo().
     """
     z = coord.zoom
     x = coord.column
     y = coord.row
-    
+
     return '/%(layer)s/%(z)d/%(x)d/%(y)d.%(extension)s' % locals()
 
 def requestLayer(config, path_info):
     """ Return a Layer.
-    
+
         Requires a configuration and PATH_INFO (e.g. "/example/0/0/0.png").
-        
+
         Config parameter can be a file path string for a JSON configuration file
         or a configuration object with 'cache', 'layers', and 'dirpath' properties.
     """
@@ -134,59 +186,76 @@ def requestLayer(config, path_info):
         # build a tuple key into previously-seen config objects.
         #
         key = hasattr(config, '__hash__') and (config, getcwd())
-        
+
         if key in _previous_configs:
             config = _previous_configs[key]
-        
+
         else:
-            config = parseConfigfile(config)
-            
+            config = parseConfig(config)
+
             if key:
                 _previous_configs[key] = config
-    
+
     else:
         assert hasattr(config, 'cache'), 'Configuration object must have a cache.'
         assert hasattr(config, 'layers'), 'Configuration object must have layers.'
         assert hasattr(config, 'dirpath'), 'Configuration object must have a dirpath.'
-    
+
     # ensure that path_info is at least a single "/"
     path_info = '/' + (path_info or '').lstrip('/')
-    
+
     if path_info == '/':
         return Core.Layer(config, None, None)
 
     layername = splitPathInfo(path_info)[0]
-    
+
     if layername not in config.layers:
         raise Core.KnownUnknown('"%s" is not a layer I know about. Here are some that I do know about: %s.' % (layername, ', '.join(sorted(config.layers.keys()))))
-    
+
     return config.layers[layername]
 
-def requestHandler(config_hint, path_info, query_string, script_name=''):
+def requestHandler(config_hint, path_info, query_string=None):
+    """ Generate a mime-type and response body for a given request.
+
+        This function is documented as part of TileStache's public API:
+            http://tilestache.org/doc/#tilestache-requesthandler
+
+        TODO: replace this with requestHandler2() in TileStache 2.0.0.
+
+        Calls requestHandler2().
+    """
+    status_code, headers, content = requestHandler2(config_hint, path_info, query_string)
+    mimetype = headers.get('Content-Type')
+
+    return mimetype, content
+
+def requestHandler2(config_hint, path_info, query_string=None, script_name=''):
     """ Generate a set of headers and response body for a given request.
-    
+
+        TODO: Replace requestHandler() with this function in TileStache 2.0.0.
+
         Requires a configuration and PATH_INFO (e.g. "/example/0/0/0.png").
-        
+
         Config_hint parameter can be a path string for a JSON configuration file
         or a configuration object with 'cache', 'layers', and 'dirpath' properties.
-        
+
         Query string is optional, currently used for JSON callbacks.
-        
-        Calls getTile() to render actual tiles, and getPreview() to render preview.html.
+
+        Calls Layer.getTileResponse() to render actual tiles, and getPreview() to render preview.html.
     """
     headers = Headers([])
-    
+
     try:
         # ensure that path_info is at least a single "/"
         path_info = '/' + (path_info or '').lstrip('/')
-        
+
         layer = requestLayer(config_hint, path_info)
         query = parse_qs(query_string or '')
         try:
             callback = query['callback'][0]
         except KeyError:
             callback = None
-        
+
         #
         # Special case for index page.
         #
@@ -195,50 +264,47 @@ def requestHandler(config_hint, path_info, query_string, script_name=''):
             return 200, Headers([('Content-Type', mimetype)]), content
 
         coord, extension = splitPathInfo(path_info)[1:]
-        
+
         if extension == 'html' and coord is None:
             status_code, headers, content = getPreview(layer)
 
         elif extension.lower() in layer.redirects:
             other_extension = layer.redirects[extension.lower()]
-            
+
             redirect_uri = script_name
             redirect_uri += mergePathInfo(layer.name(), coord, other_extension)
-            
+
             if query_string:
                 redirect_uri += '?' + query_string
-            
+
             headers['Location'] = redirect_uri
             headers['Content-Type'] = 'text/plain'
-            
+
             return 302, headers, 'You are being redirected to %s\n' % redirect_uri
-        
+
         else:
-            status_code, headers, content = layer.getTile(coord, extension)
-    
+            status_code, headers, content = layer.getTileResponse(coord, extension)
+
+        if layer.allowed_origin:
+            headers.setdefault('Access-Control-Allow-Origin', layer.allowed_origin)
+
         if callback and 'json' in headers['Content-Type']:
             headers['Content-Type'] = 'application/javascript; charset=utf-8'
             content = '%s(%s)' % (callback, content)
-        
-        allowed_origin = layer.allowed_origin
-        max_cache_age = layer.max_cache_age
-        
-        if allowed_origin:
-            headers.setdefault('Access-Control-Allow-Origin', allowed_origin)
-        
-        if max_cache_age is not None:
-            expires = datetime.utcnow() + timedelta(seconds=max_cache_age)
-            headers.setdefault('Expires', expires.strftime('%a %d %b %Y %H:%M:%S GMT'))
-            headers.setdefault('Cache-Control', 'public, max-age=%d' % max_cache_age)
 
-    except Core.KnownUnknown, e:
+        if layer.max_cache_age is not None:
+            expires = datetime.utcnow() + timedelta(seconds=layer.max_cache_age)
+            headers.setdefault('Expires', expires.strftime('%a, %d %b %Y %H:%M:%S GMT'))
+            headers.setdefault('Cache-Control', 'public, max-age=%d' % layer.max_cache_age)
+
+    except Core.KnownUnknown as e:
         out = StringIO()
-        
+
         print >> out, 'Known unknown!'
         print >> out, e
         print >> out, ''
         print >> out, '\n'.join(Core._rummy())
-        
+
         headers['Content-Type'] = 'text/plain'
         status_code, content = 500, out.getvalue()
 
@@ -246,22 +312,25 @@ def requestHandler(config_hint, path_info, query_string, script_name=''):
 
 def cgiHandler(environ, config='./tilestache.cfg', debug=False):
     """ Read environment PATH_INFO, load up configuration, talk to stdout by CGI.
-    
+
+        This function is documented as part of TileStache's public API:
+            http://tilestache.org/doc/#cgi
+
         Calls requestHandler().
-        
+
         Config parameter can be a file path string for a JSON configuration file
         or a configuration object with 'cache', 'layers', and 'dirpath' properties.
     """
     if debug:
         import cgitb
         cgitb.enable()
-    
+
     path_info = environ.get('PATH_INFO', None)
     query_string = environ.get('QUERY_STRING', None)
     script_name = environ.get('SCRIPT_NAME', None)
-    
-    status_code, headers, content = requestHandler(config, path_info, query_string, script_name)
-    
+
+    status_code, headers, content = requestHandler2(config, path_info, query_string, script_name)
+
     headers.setdefault('Content-Length', str(len(content)))
 
     # output the status code as a header
@@ -277,6 +346,9 @@ def cgiHandler(environ, config='./tilestache.cfg', debug=False):
 class WSGITileServer:
     """ Create a WSGI application that can handle requests from any server that talks WSGI.
 
+        This class is documented as part of TileStache's public API:
+            http://tilestache.org/doc/#wsgi
+
         The WSGI application is an instance of this class. Example:
 
           app = WSGITileServer('/path/to/tilestache.cfg')
@@ -289,26 +361,26 @@ class WSGITileServer:
             Config parameter can be a file path string for a JSON configuration
             file or a configuration object with 'cache', 'layers', and
             'dirpath' properties.
-            
+
             Optional autoreload boolean parameter causes config to be re-read
             on each request, applicable only when config is a JSON file.
         """
 
-        if type(config) in (str, unicode):
+        if type(config) in (str, unicode, dict):
             self.autoreload = autoreload
             self.config_path = config
-    
+
             try:
-                self.config = parseConfigfile(config)
+                self.config = parseConfig(config)
             except:
-                print "Error loading Tilestache config:"
+                print("Error loading Tilestache config:")
                 raise
 
         else:
             assert hasattr(config, 'cache'), 'Configuration object must have a cache.'
             assert hasattr(config, 'layers'), 'Configuration object must have layers.'
             assert hasattr(config, 'dirpath'), 'Configuration object must have a dirpath.'
-            
+
             self.autoreload = False
             self.config_path = None
             self.config = config
@@ -318,13 +390,13 @@ class WSGITileServer:
         """
         if self.autoreload: # re-parse the config file on every request
             try:
-                self.config = parseConfigfile(self.config_path)
-            except Exception, e:
+                self.config = parseConfig(self.config_path)
+            except Exception as e:
                 raise Core.KnownUnknown("Error loading Tilestache config file:\n%s" % str(e))
 
         try:
             layer, coord, ext = splitPathInfo(environ['PATH_INFO'])
-        except Core.KnownUnknown, e:
+        except Core.KnownUnknown as e:
             return self._response(start_response, 400, str(e))
 
         #
@@ -337,9 +409,9 @@ class WSGITileServer:
         path_info = environ.get('PATH_INFO', None)
         query_string = environ.get('QUERY_STRING', None)
         script_name = environ.get('SCRIPT_NAME', None)
-        
-        status_code, headers, content = requestHandler(self.config, path_info, query_string, script_name)
-        
+
+        status_code, headers, content = requestHandler2(self.config, path_info, query_string, script_name)
+
         return self._response(start_response, status_code, str(content), headers)
 
     def _response(self, start_response, code, content='', headers=None):
@@ -349,15 +421,17 @@ class WSGITileServer:
 
         if content:
             headers.setdefault('Content-Length', str(len(content)))
-        
+
         start_response('%d %s' % (code, httplib.responses[code]), headers.items())
         return [content]
 
 def modpythonHandler(request):
     """ Handle a mod_python request.
-    
+
+        TODO: Upgrade to new requestHandler() so this can return non-200 HTTP.
+
         Calls requestHandler().
-    
+
         Example Apache configuration for TileStache:
 
         <Directory /home/migurski/public_html/TileStache>
@@ -365,32 +439,26 @@ def modpythonHandler(request):
             PythonHandler TileStache::modpythonHandler
             PythonOption config /etc/tilestache.cfg
         </Directory>
-        
+
         Configuration options, using PythonOption directive:
         - config: path to configuration file, defaults to "tilestache.cfg",
             using request.filename as the current working directory.
     """
     from mod_python import apache
-    
+
     config_path = request.get_options().get('config', 'tilestache.cfg')
     config_path = realpath(pathjoin(dirname(request.filename), config_path))
-    
+
     path_info = request.path_info
     query_string = request.args
-    
-    #
-    # TODO: wtf with script_name here?
-    #
-    status_code, headers, content = requestHandler(config_path, path_info, query_string, request.script_name)
 
-    request.status = status_code
+    mimetype, content = requestHandler(config_path, path_info, query_string)
 
-    for k, v in headers.items():
-        request.headers_out.add(k, v)
-
+    request.status = apache.HTTP_OK
+    request.content_type = mimetype
     request.set_content_length(len(content))
     request.send_http_header()
 
     request.write(content)
 
-    return status_code
+    return apache.OK

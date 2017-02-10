@@ -8,6 +8,7 @@ around West Oakland (http://sta.mn/ck) in the "osm" layer, for zoom levels 12-15
 
 See `tilestache-list.py --help` for more information.
 """
+from __future__ import print_function
 
 from sys import stderr, path
 from optparse import OptionParser
@@ -41,7 +42,7 @@ defaults = dict(padding=0, bbox=(37.777, -122.352, 37.839, -122.226))
 parser.set_defaults(**defaults)
 
 parser.add_option('-b', '--bbox', dest='bbox',
-                  help='Bounding box in floating point geographic coordinates: south west north east. Default value is %.3f, %.3f, %.3f, %.3f.' % defaults['bbox'],
+                  help='Bounding box in floating point geographic coordinates: south west north east. Default value is %.7f, %.7f, %.7f, %.7f.' % defaults['bbox'],
                   type='float', nargs=4)
 
 parser.add_option('-p', '--padding', dest='padding',
@@ -125,4 +126,4 @@ if __name__ == '__main__':
         coordinates = generateCoordinates(ul, lr, zooms, options.padding)
     
     for coord in coordinates:
-        print '%(zoom)d/%(column)d/%(row)d' % coord.__dict__
+        print('%(zoom)d/%(column)d/%(row)d' % coord.__dict__)

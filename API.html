@@ -440,7 +440,7 @@ Example configuration:
 <span class="bg">{</span>
   "cache": {
     "name": "Test",
-    "verbose": True
+    "verbose": true
   }<span class="bg">,
   "layers": { … }
 }</span>
@@ -724,6 +724,7 @@ Example configuration:
     "bucket": "&lt;bucket name&gt;",
     "access": "&lt;access key&gt;",
     "secret": "&lt;secret key&gt;"
+    "reduced_redundancy": False
   }<span class="bg">,
   "layers": { … }
 }</span>
@@ -763,6 +764,13 @@ S3 cache parameters:
     <dd>
     Optional path under bucket to use as the cache directory. ex. <samp>'path': 'cache'</samp> will 
 	put tiles under <samp>{bucket}/cache/</samp>
+    </dd>
+
+    <dt>reduced_redundancy</dt>
+    <dd>
+    Optional boolean specifying whether to use Reduced Redundancy Storage mode in S3.
+    Files stored with RRS incur less cost but have reduced redundancy in Amazon's storage
+    system.
     </dd>
 </dl>
 
@@ -829,7 +837,8 @@ Example layer configuration:
       "redirects": …,
       "tile height": …,
       "jpeg options": …,
-      "png options": …
+      "png options": …,
+      "pixel effect": { … }
     }
   <span class="bg">}
 }</span>
@@ -953,7 +962,7 @@ Shared layer parameters:
     <dt>jpeg options</dt>
     <dd>
     An optional dictionary of JPEG creation options, passed through
-    <a href="http://www.pythonware.com/library/pil/handbook/format-jpeg.htm">to PIL</a>.
+    <a href="http://effbot.org/imagingbook/format-jpeg.htm">to PIL</a>.
     Valid options include <var>quality</var> (integer), <var>progressive</var>
     (boolean), and <var>optimize</var> (boolean).
     </dd>
@@ -961,9 +970,17 @@ Shared layer parameters:
     <dt>png options</dt>
     <dd>
     An optional dictionary of PNG creation options, passed through
-    <a href="http://www.pythonware.com/library/pil/handbook/format-png.htm">to PIL</a>.
-    Valid options include <var>palette</var> (URL or filename) and
-    <var>optimize</var> (boolean).
+    <a href="http://effbot.org/imagingbook/format-png.htm">to PIL</a>.
+    Valid options include <var>palette</var> (URL or filename), <var>palette256</var>
+	(boolean) and <var>optimize</var> (boolean).
+    </dd>
+
+    <dt>pixel effect</dt>
+    <dd>
+    An optional dictionary that defines an effect to be applied for all tiles
+    of this layer. Pixel effect can be any of these: <samp>blackwhite</samp>,
+    <samp>greyscale</samp>, <samp>desaturate</samp>, <samp>pixelate</samp>,
+    <samp>halftone</samp>, or <samp>blur</samp>.
     </dd>
 </dl>
 
@@ -1073,6 +1090,10 @@ Proxy provider parameters:
     Optional provider name string from Modest Maps built-ins. See
     <code>ModestMaps.builtinProviders.keys()</code> for a list. Example:
     <samp>"OPENSTREETMAP"</samp>.
+    </dd>
+    <dt>timeout</dt>
+    Defines a timeout in seconds for the request.
+    If not defined, the global default timeout setting will be used.
     </dd>
 </dl>
 
@@ -1246,6 +1267,13 @@ Vector provider parameters:
     Boolean flag for optionally expanding output with additional whitespace
     for readability. Results in larger but more readable GeoJSON responses.
     </dd>
+    <dt>skip_empty_fields</dt>
+    <dd>
+    Default is <samp>False</samp>.
+    <br>
+    Boolean flag for optionally skipping empty fields when assembling the GEOJSON
+    feature's properties dictionary.
+    </dd>
 </dl>
 
 <p>
@@ -1303,6 +1331,14 @@ UrlTemplate provider parameters:
     Optional string with HTTP Referer URL to send to WMS server.
     Some WMS servers use the Referer request header to authenticate requests;
     this parameter provides one.
+    </dd>
+    <dt>source projection</dt>
+    Names a geographic projection, explained in <a href="#projections">Projections</a>, that
+    coordinates should be transformed to for requests.
+    </dd>
+    <dt>timeout</dt>
+    Defines a timeout in seconds for the request.
+    If not defined, the global default timeout setting will be used.
     </dd>
 </dl>
 
@@ -1378,7 +1414,7 @@ Example Mapnik Grid provider configurations:
       {
         "name": "mapnik grid", 
         "mapfile": "style.xml",
-        "layer index": 1
+        "layer_index": 1
       },
     <span class="bg">}
     "two-grids":
@@ -1413,21 +1449,21 @@ Mapnik Grid provider parameters:
     An empty list will return no field names, while a value of <samp>null</samp>
     is equivalent to all.
     </dd>
-    <dt>layer index</dt>
+    <dt>layer_index</dt>
     <dd>
     Optional layer from the mapfile to render, defaults to <samp>0</samp> (first layer).
     </dd>
     <dt>layers</dt>
     <dd>
-    Optional ordered list of (layer index, fields) to combine; if provided
-    <var>layers</var> overrides both <var>layer index</var> and <var>fields</var>
+    Optional ordered list of (layer_index, fields) to combine; if provided
+    <var>layers</var> overrides both <var>layer_index</var> and <var>fields</var>
     arguments.
     </dd>
     <dt>scale</dt>
     <dd>
     Optional scale factor of output raster, defaults to <samp>4</samp> (64×64).
     </dd>
-    <dt>layer id key</dt>
+    <dt>layer_id_key</dt>
     <dd>
     Optional. If set, each item in the <samp>"data"</samp> property will have
     its source mapnik layer name added, keyed by this value. Useful for
@@ -1950,7 +1986,7 @@ Arguments to <code>renderTile</code>:
 
 <p>
 Return value of <code>renderTile</code> is a
-<a href="http://www.pythonware.com/library/pil/handbook/image.htm#Image.save"><code>PIL.Image</code></a>
+<a href="http://effbot.org/imagingbook/image.htm#Image.save"><code>PIL.Image</code></a>
 or other saveable object, used like this:
 </p>
 
@@ -2022,7 +2058,7 @@ Arguments to <code>renderArea</code>:
 
 <p>
 Return value of <code>renderArea</code> is a
-<a href="http://www.pythonware.com/library/pil/handbook/image.htm#Image.save"><code>PIL.Image</code></a>
+<a href="http://effbot.org/imagingbook/image.htm#Image.save"><code>PIL.Image</code></a>
 or other saveable object, used like this:
 </p>
 
